@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#d71920" />
+  <title>SimbaOS</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="loginView" class="login-shell">
+    <div class="login-card">
+      <div class="brand brand-center">
+        <div class="lion-mark">S</div>
+        <div><strong>SimbaOS</strong><span>Club Operating System</span></div>
+      </div>
+      <h1>Welcome back</h1>
+      <p class="muted">Secure access for Simba Sports Club headquarters and branches.</p>
+      <form id="loginForm" class="stack">
+        <label>Email<input id="email" type="email" value="admin@simbaos.local" required /></label>
+        <label>Password<input id="password" type="password" value="SimbaOS123!" required /></label>
+        <button class="btn primary" type="submit">Sign in</button>
+        <p id="loginError" class="error"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="lion-mark">S</div>
+        <div><strong>SimbaOS</strong><span>Club Operating System</span></div>
+      </div>
+      <nav>
+        <button class="nav active" data-view="dashboard">Overview</button>
+        <button class="nav" data-view="members">Members</button>
+        <button class="nav" data-view="branches">Branches</button>
+        <button class="nav" data-view="reports">Reports</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div id="userMini" class="user-mini"></div>
+        <button id="logoutBtn" class="btn ghost">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">SIMBA SPORTS CLUB</p>
+          <h1 id="pageTitle">Overview</h1>
+        </div>
+        <div class="top-actions">
+          <span id="healthBadge" class="health">Checking system…</span>
+          <button id="newMemberTop" class="btn primary">+ Register member</button>
+        </div>
+      </header>
+
+      <section id="dashboardView" class="view"></section>
+      <section id="membersView" class="view hidden"></section>
+      <section id="branchesView" class="view hidden"></section>
+      <section id="reportsView" class="view hidden"></section>
+    </main>
+  </div>
+
+  <dialog id="memberDialog">
+    <form id="memberForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">NEW MEMBER</p><h2>Register a Simba member</h2></div><button type="button" class="icon-btn" data-close>×</button></div>
+      <div class="form-grid">
+        <label>First name<input name="first_name" required /></label>
+        <label>Middle name<input name="middle_name" /></label>
+        <label>Last name<input name="last_name" required /></label>
+        <label>Phone<input name="phone" required placeholder="+255..." /></label>
+        <label>Email<input name="email" type="email" /></label>
+        <label>Date of birth<input name="date_of_birth" type="date" /></label>
+        <label>Gender<select name="gender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></label>
+        <label>National ID<input name="national_id" /></label>
+        <label>Region<input name="region" /></label>
+        <label>District<input name="district" /></label>
+        <label>Branch<select name="branch_id" id="memberBranch"></select></label>
+        <label>Membership<select name="membership_type"><option value="standard">Standard</option><option value="premium">Premium</option><option value="junior">Junior</option><option value="international">International</option></select></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary" type="submit">Create member</button></div>
+      <p id="memberError" class="error"></p>
+    </form>
+  </dialog>
+
+  <dialog id="branchDialog">
+    <form id="branchForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">NEW BRANCH</p><h2>Add branch</h2></div><button type="button" class="icon-btn" data-close>×</button></div>
+      <div class="form-grid">
+        <label>Branch code<input name="code" required placeholder="MBY-01" /></label>
+        <label>Name<input name="name" required /></label>
+        <label>Region<input name="region" required /></label>
+        <label>District<input name="district" /></label>
+        <label>Address<input name="address" /></label>
+        <label>Phone<input name="phone" /></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary" type="submit">Create branch</button></div>
+      <p id="branchError" class="error"></p>
+    </form>
+  </dialog>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
