@@ -70,7 +70,7 @@ $('#logoutBtn').addEventListener('click', logout);
 async function checkHealth() {
   try {
     const h = await api('/api/health');
-    $('#healthBadge').textContent = `System online · DB ${h.database}`;
+    $('#healthBadge').textContent = `● Online · DB ${h.database}`;
     $('#healthBadge').classList.add('ok');
   } catch { $('#healthBadge').textContent = 'System degraded'; }
 }
@@ -78,17 +78,42 @@ async function checkHealth() {
 async function loadDashboard() {
   const d = await api('/api/dashboard');
   $('#dashboardView').innerHTML = `
-    <div class="grid stats">
-      <div class="stat"><span>Total members</span><strong>${d.total_members.toLocaleString()}</strong></div>
-      <div class="stat"><span>Active members</span><strong>${d.active_members.toLocaleString()}</strong></div>
-      <div class="stat"><span>Active branches</span><strong>${d.active_branches.toLocaleString()}</strong></div>
-      <div class="stat"><span>This month</span><strong>${money(d.monthly_revenue)}</strong></div>
+    <div class="welcome-panel">
+      <div class="welcome-copy">
+        <p class="eyebrow">NATIONAL COMMAND CENTER</p>
+        <h2>Welcome to SimbaOS.</h2>
+        <p>One live view of Simba membership and branch activity across Tanzania.</p>
+      </div>
+      <div class="welcome-badge"><span>Network status</span><strong>● Connected</strong></div>
     </div>
-    <div class="card">
-      <div class="card-head"><div><p class="eyebrow">LIVE REGISTRATION</p><h3>Latest members</h3></div><button class="btn ghost" data-go="members">View all</button></div>
-      ${memberTable(d.recent_members)}
+
+    <div class="grid stats">
+      <div class="stat"><span>Total members</span><strong>${d.total_members.toLocaleString()}</strong><small>National registry</small></div>
+      <div class="stat"><span>Active members</span><strong>${d.active_members.toLocaleString()}</strong><small>Currently valid</small></div>
+      <div class="stat"><span>Active branches</span><strong>${d.active_branches.toLocaleString()}</strong><small>Connected nationwide</small></div>
+      <div class="stat"><span>Revenue this month</span><strong>${money(d.monthly_revenue)}</strong><small>Membership ledger</small></div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-head"><div><p class="eyebrow">LIVE REGISTRATION</p><h3>Latest members</h3></div><button class="btn ghost" data-go="members">View all</button></div>
+        ${memberTable(d.recent_members)}
+      </div>
+      <div class="card">
+        <div class="card-head"><div><p class="eyebrow">QUICK ACTIONS</p><h3>Club operations</h3></div></div>
+        <div class="quick-actions">
+          <button class="quick-action" id="quickMember"><span class="quick-icon">+</span><span><strong>Register member</strong><small>Create a new Simba identity</small></span></button>
+          <button class="quick-action" data-go="branches"><span class="quick-icon">⌘</span><span><strong>Manage branches</strong><small>National branch network</small></span></button>
+          <button class="quick-action" data-go="reports"><span class="quick-icon">▥</span><span><strong>View reports</strong><small>Membership performance</small></span></button>
+        </div>
+        <div class="network-mini">
+          <div class="network-mini-top"><span>Nationwide rollout</span><strong>${d.active_branches.toLocaleString()} active</strong></div>
+          <div class="network-line"><i></i></div>
+        </div>
+      </div>
     </div>`;
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.go)));
+  $('#quickMember')?.addEventListener('click', openMemberDialog);
 }
 
 function memberTable(rows) {
@@ -100,7 +125,7 @@ async function loadMembers(q = '') {
   const members = await api(`/api/members${q ? `?q=${encodeURIComponent(q)}` : ''}`);
   $('#membersView').innerHTML = `
     <div class="toolbar"><input id="memberSearch" class="search" placeholder="Search member number, name or phone" value="${esc(q)}"/><button id="newMemberBtn" class="btn primary">+ Register member</button></div>
-    <div class="card">${memberTable(members)}</div>`;
+    <div class="card"><div class="card-head"><div><p class="eyebrow">NATIONAL REGISTRY</p><h3>Simba members</h3></div><span class="pill active">${members.length} shown</span></div>${memberTable(members)}</div>`;
   $('#newMemberBtn').addEventListener('click', openMemberDialog);
   let timer;
   $('#memberSearch').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => loadMembers(e.target.value.trim()), 250); });
@@ -110,15 +135,15 @@ async function loadBranches() {
   state.branches = await api('/api/branches');
   $('#memberBranch').innerHTML = '<option value="">Unassigned</option>' + state.branches.map(b => `<option value="${b.id}">${esc(b.code)} — ${esc(b.name)}</option>`).join('');
   $('#branchesView').innerHTML = `
-    <div class="toolbar"><div><p class="muted">Nationwide branch administration and live membership visibility.</p></div><button id="newBranchBtn" class="btn primary">+ Add branch</button></div>
-    <div class="grid branch-grid">${state.branches.map(b => `<div class="card branch-card"><span class="pill active">${esc(b.status)}</span><h3>${esc(b.name)}</h3><div class="branch-meta">${esc(b.code)} · ${esc(b.region)}${b.district ? ` · ${esc(b.district)}` : ''}</div><div class="branch-count">${Number(b.member_count).toLocaleString()}</div><div class="muted">registered members</div></div>`).join('')}</div>`;
+    <div class="toolbar"><div><p class="muted">Manage the nationwide Simba branch network from one place.</p></div><button id="newBranchBtn" class="btn primary">+ Add branch</button></div>
+    <div class="grid branch-grid">${state.branches.length ? state.branches.map(b => `<div class="card branch-card"><span class="pill active">● ${esc(b.status)}</span><h3>${esc(b.name)}</h3><div class="branch-meta">${esc(b.code)} · ${esc(b.region)}${b.district ? ` · ${esc(b.district)}` : ''}</div><div class="branch-count">${Number(b.member_count).toLocaleString()}</div><div class="muted">registered members</div></div>`).join('') : '<div class="card empty">No branches yet.</div>'}</div>`;
   $('#newBranchBtn')?.addEventListener('click', () => $('#branchDialog').showModal());
 }
 
 async function loadReports() {
   const rows = await api('/api/reports/branches');
   const max = Math.max(1, ...rows.map(r => Number(r.members)));
-  $('#reportsView').innerHTML = `<div class="card"><div class="card-head"><div><p class="eyebrow">NATIONWIDE</p><h3>Membership by branch</h3></div></div>${rows.length ? rows.map(r => `<div class="report-bar"><strong>${esc(r.code)}</strong><div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, Number(r.members)/max*100)}%"></div></div><span>${Number(r.members).toLocaleString()}</span></div>`).join('') : '<div class="empty">No branch data yet.</div>'}</div>`;
+  $('#reportsView').innerHTML = `<div class="card"><div class="card-head"><div><p class="eyebrow">NATIONWIDE ANALYTICS</p><h3>Membership by branch</h3></div><span class="pill active">Live data</span></div>${rows.length ? rows.map(r => `<div class="report-bar"><strong>${esc(r.code)}</strong><div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, Number(r.members)/max*100)}%"></div></div><span>${Number(r.members).toLocaleString()}</span></div>`).join('') : '<div class="empty">No branch data yet.</div>'}</div>`;
 }
 
 function openMemberDialog() { $('#memberDialog').showModal(); }
