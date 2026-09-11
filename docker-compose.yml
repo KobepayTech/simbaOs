@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: simbaos
+      POSTGRES_USER: simbaos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simbaos-change-me}
+    volumes:
+      - simbaos_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simbaos -d simbaos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://simbaos:${POSTGRES_PASSWORD:-simbaos-change-me}@db:5432/simbaos
+      JWT_SECRET: ${JWT_SECRET:-replace-this-secret}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@simbaos.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-SimbaOS123!}
+    ports:
+      - "${SIMBAOS_PORT:-8080}:8080"
+
+volumes:
+  simbaos_db:
