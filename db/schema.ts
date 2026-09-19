@@ -1,0 +1,7 @@
+import {sqliteTable,text,integer,uniqueIndex} from 'drizzle-orm/sqlite-core';
+export const members=sqliteTable('members',{id:text('id').primaryKey(),userId:text('user_id').notNull().unique(),name:text('name').notNull(),phone:text('phone').notNull(),region:text('region').notNull(),requestedNumber:integer('requested_number').notNull(),created:text('created').notNull()});
+export const holdings=sqliteTable('holdings',{number:integer('number').primaryKey(),memberId:text('member_id').notNull().unique(),expires:text('expires').notNull(),paidAt:text('paid_at').notNull()});
+export const ballots=sqliteTable('ballots',{id:text('id').primaryKey(),title:text('title').notNull(),region:text('region'),options:text('options').notNull(),opens:text('opens').notNull(),closes:text('closes').notNull()});
+export const votes=sqliteTable('votes',{id:text('id').primaryKey(),ballotId:text('ballot_id').notNull(),memberId:text('member_id').notNull(),choice:integer('choice').notNull(),created:text('created').notNull()},t=>[uniqueIndex('one_vote').on(t.ballotId,t.memberId)]);
+export const eligibility=sqliteTable('eligibility',{id:text('id').primaryKey(),ballotId:text('ballot_id').notNull(),memberId:text('member_id').notNull()},t=>[uniqueIndex('one_eligible').on(t.ballotId,t.memberId)]);
+export const reminders=sqliteTable('reminders',{id:text('id').primaryKey(),memberId:text('member_id').notNull(),expiry:text('expiry').notNull(),due:text('due').notNull(),status:text('status').notNull().default('pending')});

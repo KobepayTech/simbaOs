@@ -1,0 +1,2 @@
+import {database} from '@/lib/server-db';import {category} from '@/lib/membership';
+export async function GET(req:Request){try{const n=Number(new URL(req.url).searchParams.get('number'));const tier=category(n);const held=await database().prepare('SELECT number FROM holdings WHERE number=? AND expires>?').bind(n,new Date().toISOString()).first();return Response.json({number:n,tier,available:!held,price:null,paymentAvailable:false});}catch(e){return Response.json({error:e instanceof Error?e.message:'Unavailable'},{status:400});}}
