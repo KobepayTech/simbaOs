@@ -1,0 +1,2 @@
+interface SchedulerEnv {APP_ORIGIN:string;CRON_SECRET:string;}
+export default {async scheduled(_event:unknown,env:SchedulerEnv,ctx:{waitUntil(p:Promise<unknown>):void}){ctx.waitUntil((async()=>{const url=new URL('/api/jobs',env.APP_ORIGIN);if(url.protocol!=='https:')throw Error('HTTPS app origin required');const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+env.CRON_SECRET},signal:AbortSignal.timeout(60000)});if(!r.ok)throw Error('Reminder job failed: '+r.status);})());}};

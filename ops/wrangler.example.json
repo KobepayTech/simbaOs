@@ -1,0 +1,7 @@
+{
+  "name": "simba-membership-scheduler",
+  "main": "scheduler.ts",
+  "compatibility_date": "2026-09-01",
+  "triggers": {"crons": ["*/15 * * * *"]},
+  "vars": {"APP_ORIGIN": "https://YOUR-CONFIGURED-MEMBERSHIP-DOMAIN"}
+}

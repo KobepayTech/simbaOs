@@ -1,2 +1,2 @@
-import {database} from '@/lib/server-db';import {category} from '@/lib/membership';
-export async function GET(req:Request){try{const n=Number(new URL(req.url).searchParams.get('number'));const tier=category(n);const held=await database().prepare('SELECT number FROM holdings WHERE number=? AND expires>?').bind(n,new Date().toISOString()).first();return Response.json({number:n,tier,available:!held,price:null,paymentAvailable:false});}catch(e){return Response.json({error:e instanceof Error?e.message:'Unavailable'},{status:400});}}
+import {database} from '@/lib/server-db';import {availability} from '@/lib/platform/core';
+export async function GET(req:Request){try{return Response.json(await availability(database(),Number(new URL(req.url).searchParams.get('number'))),{headers:{'Cache-Control':'no-store'}});}catch{return Response.json({error:'Check a number between 1 and 1,000,000.'},{status:400});}}

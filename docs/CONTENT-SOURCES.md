@@ -20,10 +20,10 @@ Regions: https://en.wikipedia.org/wiki/Regions_of_Tanzania and https://en.wikipe
 # Launch dependencies
 - Club-authorized fee and renewal schedule, including repeated-digit override and 101–999 above 1–100 as requested.
 - Payment provider contract/credentials and a verified, idempotent payment callback before assigning real numbers.
-- Phone OTP and recovery provider; current private review uses Sites account authentication.
+- Twilio Verify credentials for fan phone authentication; private administrator review uses trusted Sites authentication.
 - SMS provider and production reminder scheduler; one calendar month before expiry, clamped at month-end.
 - Club administrator identities and actual ballots. No fabricated elections or member data.
 - Public fan access and intended kobeapptz.com domain configuration. Current Site remains owner-private.
 
-# Implemented foundation
-QR to /join; responsive onboarding; required region and Tanzanian phone validation; permanent IDs persisted in D1; pending number preferences; server-side number-category validation and availability; active-only ballot API and immutable member-based duplicate-vote constraint; regional catalog; membership view; source-linked club content. Holdings expiry is evaluated on every availability and membership read, so expired holdings do not remain active. Number reassignment and reminder queuing functions are provided for a trusted future payment integration. No client can activate membership or choose a payment amount.
+# Implemented platform
+Mobile-first installable web app; QR onboarding and printable verification cards; phone OTP integration; permanent joining rank; timed number reservations; payment webhook verification and idempotent activation; renewal reminder outbox; regional/district branches; loyalty and referrals; benefit claims and event check-in; anonymous-choice voting with paid-member eligibility snapshots; scoped staff roles and administrative audit history. See INTEGRATIONS.md for provider setup and remaining launch dependencies. External payment and messaging delivery have not been exercised without credentials.
