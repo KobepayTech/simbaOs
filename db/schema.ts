@@ -29,3 +29,9 @@ export const participation=sqliteTable('participation',{id:text('id').primaryKey
 export const sealedVotes=sqliteTable('sealed_votes',{id:text('id').primaryKey(),ballotId:text('ballot_id').notNull(),choice:integer('choice').notNull()});
 export const audit=sqliteTable('audit',{id:text('id').primaryKey(),actor:text('actor').notNull(),action:text('action').notNull(),target:text('target').notNull(),created:text('created').notNull()});
 export const outbox=sqliteTable('outbox',{id:text('id').primaryKey(),memberId:text('member_id').notNull(),kind:text('kind').notNull(),body:text('body').notNull(),status:text('status').notNull().default('pending'),claimUntil:text('claim_until'),providerId:text('provider_id'),created:text('created').notNull()});
+
+export const clubConfig=sqliteTable('club_config',{id:integer('id').primaryKey(),value:text('value').notNull()});
+export const paymentMethods=sqliteTable('payment_methods',{id:text('id').primaryKey(),name:text('name').notNull(),kind:text('kind').notNull(),accountName:text('account_name').notNull(),accountNumber:text('account_number').notNull(),instructions:text('instructions').notNull(),active:integer('active').notNull().default(1)});
+export const manualPayments=sqliteTable('manual_payments',{orderId:text('order_id').primaryKey(),methodId:text('method_id').notNull(),methodName:text('method_name').notNull(),receivedAt:text('received_at').notNull(),note:text('note').notNull(),actor:text('actor').notNull()});
+export const refundRecords=sqliteTable('refund_records',{orderId:text('order_id').primaryKey(),reference:text('reference').notNull().unique(),note:text('note').notNull(),actor:text('actor').notNull(),created:text('created').notNull()});
+export const clubPosts=sqliteTable('club_posts',{id:text('id').primaryKey(),title:text('title').notNull(),body:text('body').notNull(),url:text('url').notNull(),published:integer('published').notNull().default(0),created:text('created').notNull()});

@@ -37,7 +37,7 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-For local database setup, build first and apply **each** pending migration once in numeric order (0000, 0001 and 0002):
+For local database setup, build first and apply **each** pending migration once in numeric order (0000 through 0003):
 
 ```sh
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_clever_richard_fisk.sql
@@ -57,7 +57,7 @@ See [runtime instructions](docs/RUNTIME.md) for the Worker runtime and authentic
 
 ## Before public launch
 
-1. Publish approved membership prices and term length in Administration → Settings.
+1. Publish approved membership prices and term length in Admin → Membership pricing.
 2. Configure phone/SMS credentials and the chosen payment-provider adapter.
 3. Deploy the reminder scheduler with its secret and the final app origin.
 4. Configure administrator identities and branch/scanner roles.
@@ -74,3 +74,7 @@ pnpm build
 ```
 
 Tests use SQLite transactions behind a small D1-compatible harness. They cover concurrent ownership rules, callback idempotency, late payments, joining order, referral rewards, benefits and voting. Real provider delivery, device installation and production checkout still require their respective acceptance tests.
+
+## Separate administration portal
+
+Open `/admin` for the club office: membership desk, audited manual receipts, payment methods, fees, editable club profile and policies, news, branches, events, rewards, ballots, staff access and reminder/audit logs. See [Administrator guide](docs/ADMIN.md). Shared data updates the mobile fan app. Automatic payment and SMS integrations still require production configuration.

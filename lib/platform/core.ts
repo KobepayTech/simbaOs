@@ -13,14 +13,14 @@ export function sameOrigin(req:Request){if(req.headers.get('origin')!==new URL(r
 export function auditStmt(db:D1Database,u:Principal,action:string,target:string){return db.prepare('INSERT INTO audit VALUES(?,?,?,?,?)').bind(id(),u.id,action,target,now());}
 export async function register(db:D1Database,u:Principal,b:any){
  if(!u.phone)throw new Fault(403,'Verify your phone before registering.');
- const existing=await member(db,u);if(existing)return existing;
+ const existing=await member(db,u);if(existing){if(!existing.verified_phone&&existing.phone===u.phone){await db.prepare('UPDATE profiles SET verified_phone=? WHERE member_id=?').bind(u.phone,existing.id).run();return member(db,u);}return existing;}
  category(b.number);const mid=id();const ref=b.referrer?await db.prepare('SELECT m.id FROM members m JOIN profiles p ON p.member_id=m.id WHERE p.card_token=? AND m.user_id<>?').bind(b.referrer,u.id).first<any>():null;
  await db.batch([db.prepare('INSERT INTO members VALUES(?,?,?,?,?,?,?)').bind(mid,u.id,b.name,u.phone,b.region,b.number,now()),db.prepare('INSERT INTO profiles(member_id,district,locale,verified_phone,referrer,card_token) VALUES(?,?,?,?,?,?)').bind(mid,b.district,b.locale,u.phone,ref?.id||null,id()),db.prepare('INSERT INTO wallets VALUES(?,0)').bind(mid),auditStmt(db,u,'register',mid)]);
  return member(db,u);
 }
 export async function availability(db:D1Database,n:number){const tier=category(n),time=now();const held=await db.prepare('SELECT number FROM holdings WHERE number=? AND expires>?').bind(n,time).first();const reserved=await db.prepare('SELECT expires FROM reservations WHERE number=? AND expires>?').bind(n,time).first<any>();const c=await config(db);return {number:n,tier,available:!held&&!reserved,held:!!held,reservedUntil:reserved?.expires||null,price:c.prices[tier],months:c.months};}
-export async function reserve(db:D1Database,u:Principal,n:number){
- const m=await needMember(db,u);if(!m.verified_phone)throw new Fault(403,'Verified phone required.');const tier=category(n),c=await config(db),amount=c.prices[tier];if(!amount)throw new Fault(409,'The club has not published prices yet.');
+export async function reserve(db:D1Database,u:Principal,n:number,staff?:Principal){
+ if(staff)admin(staff);const m=await needMember(db,u);if(!m.verified_phone&&!staff)throw new Fault(403,'Verified phone required.');const tier=category(n),c=await config(db),amount=c.prices[tier];if(!amount)throw new Fault(409,'The club has not published prices yet.');
  if(m.number&&m.number!==n)throw new Fault(409,'Renew your existing number while your membership is active.');
  const time=now(),oid=id(),holdUntil=new Date(Date.now()+c.reservationMinutes*60000).toISOString(),expiry=monthsAfter(m.expires&&m.expires>time?m.expires:time,c.months);
  const existing=await db.prepare(`SELECT o.*,r.expires AS reservation_expires FROM orders o JOIN reservations r ON r.order_id=o.id WHERE o.member_id=? AND r.expires>? AND o.status IN ('reserved','pending')`).bind(m.id,time).first<any>();
@@ -32,11 +32,12 @@ export async function reserve(db:D1Database,u:Principal,n:number){
  ]);
  const o=await db.prepare('SELECT * FROM orders WHERE id=?').bind(oid).first<any>();if(!o)throw new Fault(409,'Number was just reserved or assigned. Please choose another.');return {...o,reservation_expires:holdUntil};
 }
-export async function applyPayment(db:D1Database,b:any,digest:string){
+export async function applyPayment(db:D1Database,b:any,digest:string,manual?:{actor:Principal;methodId:string;methodName:string;receivedAt:string;note:string}){
+ if(manual)admin(manual.actor);b={...b,receipt:b.receipt.trim().toUpperCase()};
  const o=await db.prepare('SELECT * FROM orders WHERE id=?').bind(b.orderId).first<any>();if(!o)throw new Fault(404,'Unknown order');
  if(o.amount!==b.amount||o.currency!==b.currency)throw new Fault(400,'Payment amount or currency mismatch');
  const previous=await db.prepare('SELECT digest FROM payment_events WHERE id=?').bind(b.eventId).first<any>();if(previous){if(previous.digest!==digest)throw new Fault(409,'Event ID reused with different content');return {duplicate:true};}
- if(o.status==='paid'||o.status==='review'){if(o.receipt!==b.receipt)throw new Fault(409,'Order already settled');return {duplicate:true};}
+ if(o.status==='paid'||o.status==='review'||o.status==='refunded'){if((o.receipt||'').toUpperCase()!==b.receipt)throw new Fault(409,'Order already settled');return {duplicate:true};}
  const time=now(),c=await config(db);
  // Assignment requires a still-valid reservation; a late paid event enters review.
  await db.batch([
@@ -49,7 +50,8 @@ export async function applyPayment(db:D1Database,b:any,digest:string){
  db.prepare(`UPDATE wallets SET points=COALESCE((SELECT SUM(amount) FROM points WHERE points.member_id=wallets.member_id),0) WHERE member_id=? OR member_id=(SELECT referrer FROM profiles WHERE member_id=?)`).bind(o.member_id,o.member_id),
  ...[{label:'month',due:reminderDate(o.expires)},...(c.remind7?[{label:'7days',due:new Date(Date.parse(o.expires)-7*86400000).toISOString()}]:[]),...(c.remind1?[{label:'1day',due:new Date(Date.parse(o.expires)-86400000).toISOString()}]:[])].map(r=>db.prepare(`INSERT OR IGNORE INTO reminders(id,member_id,expiry,due,status) SELECT ?,member_id,expires,?,'pending' FROM orders WHERE id=? AND status='paid'`).bind('renew:'+o.member_id+':'+o.expires+':'+r.label,r.due,o.id)),
  db.prepare('DELETE FROM reservations WHERE order_id=?').bind(o.id),
- db.prepare('INSERT INTO audit VALUES(?,?,?,?,?)').bind(id(),'payment-gateway','payment-confirmed',o.id,time)
+ ...(manual?[db.prepare('INSERT INTO manual_payments VALUES(?,?,?,?,?,?)').bind(o.id,manual.methodId,manual.methodName,manual.receivedAt,manual.note,manual.actor.id)]:[]),
+ db.prepare('INSERT INTO audit VALUES(?,?,?,?,?)').bind(id(),manual?.actor.id||'payment-gateway',manual?'manual-payment-recorded':'payment-confirmed',o.id,time)
  ]);
  return db.prepare('SELECT id,status FROM orders WHERE id=?').bind(o.id).first();
 }

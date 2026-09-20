@@ -23,7 +23,7 @@ No payment provider was selected or connected. A club-owned HTTPS adapter must i
 - After provider-confirmed settlement, post `{ "eventId": "unique-event", "orderId": "uuid", "amount": 123, "currency": "TZS", "receipt": "unique-provider-receipt", "status": "paid" }` to `/api/payment-webhook`.
 - `x-payment-timestamp`: Unix seconds; `x-payment-signature`: hex HMAC-SHA256(secret, timestamp + "." + exact raw JSON body). Replay window is five minutes. Retry with a fresh signature timestamp but the same event/body identifiers.
 - The adapter must validate upstream provider signatures and authoritative settlement status before sending this normalized event. Never accept a screenshot or browser success callback as payment confirmation.
-- Amount/currency must match the server-side order; a unique receipt may settle only one order. Expired reservations or conflicting number ownership put a paid order in `review`. Admins must reconcile/refund through the provider; there is no fabricated refund button.
+- Amount/currency must match the server-side order; a unique receipt may settle only one order. Expired reservations or conflicting number ownership put a paid order in `review`. Admins must reconcile/refund through the provider; the admin portal can record the reference of a refund already completed externally, but never initiates one.
 - Final prices and membership duration must be published by a club administrator before checkout works. Current defaults leave every price unconfigured.
 
 ## Scheduler and SMS
@@ -47,3 +47,7 @@ https://www.twilio.com/docs/verify/api/verification
 https://www.twilio.com/docs/verify/api/verification-check
 https://www.twilio.com/docs/messaging/api/message-resource
 https://developers.cloudflare.com/d1/worker-api/d1-database/
+
+## Administrator-recorded payments
+
+The separate `/admin` portal supports recording real cash, bank and mobile-money receipts without gateway credentials. Configure actual payment methods and approved fees first. This does not enable automatic collection. See `ADMIN.md` for the workflow and audit constraints.
