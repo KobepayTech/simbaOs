@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: simbaos
+          POSTGRES_PASSWORD: simbaos
+          POSTGRES_DB: simbaos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simbaos -d simbaos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+        env:
+          SIMBAOS_TEST_DATABASE_URL: postgres://simbaos:simbaos@localhost:5432/simbaos_test
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Covers the packaging contract: npm ci against the committed lockfile, and the
+      # non-root user the container runs as.
+      - run: docker build -t simbaos:ci .
+
+      - name: Container runs as a non-root user
+        run: |
+          user="$(docker run --rm --entrypoint sh simbaos:ci -c 'id -un')"
+          echo "container user: $user"
+          [ "$user" != "root" ]
+
+      - name: Production refuses placeholder secrets
+        run: |
+          set +e
+          output="$(docker run --rm -e JWT_SECRET=replace-with-long-random-secret \
+                                    -e ADMIN_PASSWORD='SimbaOS123!' simbaos:ci 2>&1)"
+          status=$?
+          set -e
+          echo "$output"
+          [ "$status" -eq 1 ]
+          echo "$output" | grep -q 'refused to start'

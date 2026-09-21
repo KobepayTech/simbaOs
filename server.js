@@ -346,6 +346,10 @@ app.get('/api/reports/branches', auth, route(async (_req, res) => {
   res.json(result.rows);
 }));
 
+// An unknown /api path is a client error, not a page. Without this it would fall through to the
+// SPA shell below and answer a mistyped endpoint with 200 and a lump of HTML.
+app.use('/api', (_req, res) => res.status(404).json({ error: 'Unknown endpoint' }));
+
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // Anything a route forwards with next(error) lands here. Client mistakes are mapped to a 4xx with

@@ -54,6 +54,21 @@ SimbaOS is not tied to a third-party SaaS database. The team owns the applicatio
 
 The web app listens on port `8080` by default and can be placed behind the club's own domain and TLS proxy.
 
+## Development and tests
+
+```bash
+npm ci
+createdb simbaos_test
+SIMBAOS_TEST_DATABASE_URL=postgres://simbaos:simbaos@localhost:5432/simbaos_test npm test
+```
+
+The suite boots the real server against that database and covers the configuration gate,
+the crash-resistance of the API, member-number allocation and the core registration flow.
+It drops and recreates the schema it points at, so it refuses to run against a database
+whose name does not look like a test database.
+
+GitHub Actions runs the same suite plus a Docker image build on every push.
+
 ## Core API
 
 - `GET /api/health`
