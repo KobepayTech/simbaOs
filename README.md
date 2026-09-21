@@ -19,21 +19,29 @@ The first MVP includes:
 ## Run it locally or on a club server
 
 1. Install Docker and Docker Compose.
-2. Copy `.env.example` to `.env` and change all passwords/secrets.
+2. Copy `.env.example` to `.env` and set a real value for every variable:
+
+```bash
+cp .env.example .env
+openssl rand -base64 24   # POSTGRES_PASSWORD
+openssl rand -hex 32      # JWT_SECRET
+```
+
+   Choose your own `ADMIN_PASSWORD` of at least 12 characters. Compose will not start
+   while `POSTGRES_PASSWORD`, `JWT_SECRET` or `ADMIN_PASSWORD` is unset, and the
+   application refuses to boot in production if any of them is still a placeholder.
+
 3. Start the stack:
 
 ```bash
 docker compose up -d --build
 ```
 
-4. Open `http://localhost:8080` (or the server IP on your LAN).
+4. Open `http://localhost:8080` (or the server IP on your LAN) and sign in with the
+   `ADMIN_EMAIL` and `ADMIN_PASSWORD` you set in `.env`.
 
-The default development credentials are shown only for first-run convenience:
-
-- Email: `admin@simbaos.local`
-- Password: `SimbaOS123!`
-
-**Change these in `.env` before any real deployment.**
+The administrator account is created from `.env` on first boot only. Changing
+`ADMIN_PASSWORD` afterwards does not rotate an account that already exists.
 
 ## Hosting model
 

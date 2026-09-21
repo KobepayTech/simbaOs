@@ -38,8 +38,8 @@
         <h2>Welcome back</h2>
         <p class="muted">Sign in to continue to SimbaOS.</p>
         <form id="loginForm" class="stack">
-          <label>Email address<input id="email" type="email" value="admin@simbaos.local" required /></label>
-          <label>Password<input id="password" type="password" value="SimbaOS123!" required /></label>
+          <label>Email address<input id="email" type="email" autocomplete="username" placeholder="you@simbasc.co.tz" required /></label>
+          <label>Password<input id="password" type="password" autocomplete="current-password" placeholder="Your password" required /></label>
           <div class="login-row"><label class="remember"><input type="checkbox" checked /> Remember this device</label><button type="button" class="link-btn">Need help?</button></div>
           <button class="btn primary login-submit" type="submit">Sign in to SimbaOS <span>→</span></button>
           <p id="loginError" class="error"></p>

@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: simbaos
       POSTGRES_USER: simbaos
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simbaos-change-me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - simbaos_db:/var/lib/postgresql/data
     healthcheck:
@@ -22,10 +22,10 @@ services:
         condition: service_healthy
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://simbaos:${POSTGRES_PASSWORD:-simbaos-change-me}@db:5432/simbaos
-      JWT_SECRET: ${JWT_SECRET:-replace-this-secret}
+      DATABASE_URL: postgres://simbaos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/simbaos
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@simbaos.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-SimbaOS123!}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
     ports:
       - "${SIMBAOS_PORT:-8080}:8080"
 
