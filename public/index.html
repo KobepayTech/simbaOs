@@ -62,6 +62,7 @@
         <button class="nav" data-view="members"><span class="nav-icon">♙</span><span>Members</span></button>
         <button class="nav" data-view="branches"><span class="nav-icon">⌘</span><span>Branches</span></button>
         <button class="nav" data-view="reports"><span class="nav-icon">▥</span><span>Reports</span></button>
+        <button class="nav" data-view="staff" id="navStaff" hidden><span class="nav-icon">☗</span><span>Staff</span></button>
       </nav>
 
       <div class="sidebar-section secondary">OPERATIONS</div>
@@ -74,6 +75,7 @@
       <div class="sidebar-foot">
         <div class="club-status"><span class="status-dot"></span><div><strong>Simba Network</strong><small>All systems operational</small></div></div>
         <div class="user-row"><div class="avatar">SC</div><div id="userMini" class="user-mini"></div></div>
+        <button id="changePasswordBtn" class="btn ghost">Change password</button>
         <button id="logoutBtn" class="btn ghost">Sign out</button>
       </div>
     </aside>
@@ -81,7 +83,7 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <p class="eyebrow">SIMBA SPORTS CLUB · HQ</p>
+          <p class="eyebrow" id="orgEyebrow">SIMBA SPORTS CLUB · HQ</p>
           <h1 id="pageTitle">Overview</h1>
         </div>
         <div class="top-actions">
@@ -95,6 +97,7 @@
       <section id="membersView" class="view hidden"></section>
       <section id="branchesView" class="view hidden"></section>
       <section id="reportsView" class="view hidden"></section>
+      <section id="staffView" class="view hidden"></section>
     </main>
   </div>
 
@@ -133,6 +136,34 @@
       </div>
       <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary" type="submit">Create branch</button></div>
       <p id="branchError" class="error"></p>
+    </form>
+  </dialog>
+
+  <dialog id="staffDialog">
+    <form id="staffForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow" id="staffDialogKicker">NEW STAFF</p><h2 id="staffDialogTitle">Add staff account</h2><p class="muted">Give a colleague their own sign-in instead of sharing one.</p></div><button type="button" class="icon-btn" data-close>×</button></div>
+      <div class="form-grid">
+        <label>Full name<input name="name" required /></label>
+        <label>Email<input name="email" type="email" required /></label>
+        <label>Role<select name="role" id="staffRole" required></select></label>
+        <label id="staffBranchField">Branch<select name="branch_id" id="staffBranch"></select></label>
+        <label id="staffPasswordField">Temporary password<input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="At least 12 characters" /></label>
+        <label id="staffStatusField" hidden>Status<select name="status"><option value="active">Active</option><option value="suspended">Suspended</option></select></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary" type="submit">Save staff account</button></div>
+      <p id="staffError" class="error"></p>
+    </form>
+  </dialog>
+
+  <dialog id="passwordDialog">
+    <form id="passwordForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">PASSWORD</p><h2 id="passwordDialogTitle">Change password</h2><p class="muted" id="passwordDialogSubtitle">Choose a password of at least 12 characters.</p></div><button type="button" class="icon-btn" data-close>×</button></div>
+      <div class="form-grid">
+        <label id="currentPasswordField">Current password<input name="current_password" type="password" autocomplete="current-password" /></label>
+        <label>New password<input name="new_password" type="password" minlength="12" autocomplete="new-password" required /></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary" type="submit">Save password</button></div>
+      <p id="passwordError" class="error"></p>
     </form>
   </dialog>
 

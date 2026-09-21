@@ -1,118 +1,20 @@
-// SimbaOS smoke tests.
+// SimbaOS API smoke tests.
 //
 // Boots server.js against a throwaway PostgreSQL database and covers the P0 failure modes
-// (process-killing query errors, insecure secrets, member-number reuse) plus the core
-// branch/member/payment flow.
+// (process-killing query errors, insecure secrets, member-number reuse), branch scoping and
+// staff management, plus the core branch/member/payment flow.
 //
 //   createdb simbaos_test
 //   SIMBAOS_TEST_DATABASE_URL=postgres://simbaos:simbaos@localhost:5432/simbaos_test npm test
-//
-// The suite wipes the schema it points at, so it refuses to run against a database whose name
-// does not look like a test database unless SIMBAOS_TEST_ALLOW_ANY_DB=1.
 
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pg from 'pg';
+import {
+  ADMIN_EMAIL, ADMIN_PASSWORD, STAFF_PASSWORD, call, createStaff, expectExit, login, loginAs,
+  resetDatabase, startServer, stopAllServers, stopServer, waitForHealth, withDatabase
+} from './support/helpers.mjs';
 
-const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const DATABASE_URL = process.env.SIMBAOS_TEST_DATABASE_URL
-  || 'postgres://simbaos:simbaos@localhost:5432/simbaos_test';
-const FIRST_PORT = Number(process.env.SIMBAOS_TEST_PORT || 8099);
-const JWT_SECRET = 'smoke-test-jwt-secret-long-enough-to-pass-validation';
-const ADMIN_EMAIL = 'admin@simbaos.test';
-const ADMIN_PASSWORD = 'smoke-test-admin-password';
-
-const databaseName = (DATABASE_URL.split('?')[0].split('/').pop() || '').trim();
-if (!/(^|_)test$/.test(databaseName) && process.env.SIMBAOS_TEST_ALLOW_ANY_DB !== '1') {
-  console.error(`Refusing to run: "${databaseName}" does not look like a test database.`);
-  console.error('These tests drop and recreate the public schema. Point SIMBAOS_TEST_DATABASE_URL');
-  console.error('at a disposable database, or set SIMBAOS_TEST_ALLOW_ANY_DB=1 to override.');
-  process.exit(1);
-}
-
-let nextPort = FIRST_PORT;
-const running = new Set();
-
-/** Start server.js with a hermetic environment. Pass null in `env` to unset a variable. */
-function startServer(env = {}) {
-  const port = nextPort++;
-  const base = { PORT: String(port), DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD,
-    NODE_ENV: 'test', DOTENV_CONFIG_PATH: path.join(ROOT, 'test', 'no-such.env'), ...env };
-  const childEnv = { ...process.env };
-  for (const [key, value] of Object.entries(base)) {
-    if (value === null) delete childEnv[key];
-    else childEnv[key] = value;
-  }
-
-  const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
-  const server = { child, port, base: `http://127.0.0.1:${port}`, stdout: '', stderr: '', exitCode: null };
-  child.stdout.on('data', (d) => { server.stdout += d; });
-  child.stderr.on('data', (d) => { server.stderr += d; });
-  server.exited = new Promise((resolve) => child.on('exit', (code) => { server.exitCode = code; running.delete(server); resolve(code); }));
-  running.add(server);
-  return server;
-}
-
-function stopServer(server) {
-  if (server && server.exitCode === null) server.child.kill('SIGKILL');
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** Wait for the process to exit. Fails the test rather than hanging if it stays up. */
-async function expectExit(server, timeoutMs = 20000) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`server did not exit within ${timeoutMs}ms; it is still running`)), timeoutMs);
-  });
-  try {
-    return await Promise.race([server.exited, timeout]);
-  } finally {
-    clearTimeout(timer);
-    stopServer(server);
-  }
-}
-
-/** Resolve once the server answers /api/health, or reject if it exits or never comes up. */
-async function waitForHealth(server, attempts = 80) {
-  for (let i = 0; i < attempts; i++) {
-    if (server.exitCode !== null) throw new Error(`server exited early (code ${server.exitCode})\n${server.stderr}`);
-    try {
-      const response = await fetch(`${server.base}/api/health`);
-      if (response.ok) return;
-    } catch { /* not listening yet */ }
-    await sleep(250);
-  }
-  throw new Error(`server did not become healthy\n${server.stderr}`);
-}
-
-async function call(server, method, endpoint, { body, token } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(`${server.base}${endpoint}`, {
-    method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(10000)
-  });
-  const text = await response.text();
-  let json = null;
-  try { json = JSON.parse(text); } catch { /* not JSON */ }
-  return { status: response.status, json, text, contentType: response.headers.get('content-type') || '' };
-}
-
-async function withDatabase(fn) {
-  const client = new pg.Client({ connectionString: DATABASE_URL });
-  await client.connect();
-  try { return await fn(client); } finally { await client.end(); }
-}
-
-const resetDatabase = () => withDatabase((c) => c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;'));
-
-const login = async (server) => (await call(server, 'POST', '/api/auth/login',
-  { body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } }));
-
-after(() => { for (const server of running) stopServer(server); });
+after(stopAllServers);
 
 // ---------------------------------------------------------------------------------------------
 
@@ -312,5 +214,296 @@ describe('upgrade of an existing database', () => {
       assert.equal(created.status, 201);
       assert.equal(created.json.member_no, `SIM-${year}-000043`);
     } finally { stopServer(server); }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+describe('branch scoping', () => {
+  let server, hq, mbeya, dodoma, mbeyaRegistrar, mbeyaAdmin, mbeyaMember, dodomaMember;
+
+  before(async () => {
+    await resetDatabase();
+    server = startServer();
+    await waitForHealth(server);
+    hq = (await login(server)).json.token;
+
+    mbeya = (await call(server, 'POST', '/api/branches', { token: hq, body: { code: 'MBY-01', name: 'Mbeya', region: 'Mbeya' } })).json;
+    dodoma = (await call(server, 'POST', '/api/branches', { token: hq, body: { code: 'DOD-02', name: 'Dodoma East', region: 'Dodoma' } })).json;
+
+    mbeyaMember = (await call(server, 'POST', '/api/members', {
+      token: hq, body: { first_name: 'Mbeya', last_name: 'Member', phone: '+255730000001', branch_id: mbeya.id }
+    })).json;
+    dodomaMember = (await call(server, 'POST', '/api/members', {
+      token: hq, body: { first_name: 'Dodoma', last_name: 'Member', phone: '+255730000002', branch_id: dodoma.id }
+    })).json;
+    await call(server, 'POST', `/api/members/${dodomaMember.id}/payments`, { token: hq, body: { amount: 90000 } });
+    await call(server, 'POST', `/api/members/${mbeyaMember.id}/payments`, { token: hq, body: { amount: 10000 } });
+
+    mbeyaRegistrar = await createStaff(server, hq, { name: 'Mbeya Registrar', email: 'registrar@mbeya.test', role: 'registrar', branch_id: mbeya.id });
+    mbeyaAdmin = await createStaff(server, hq, { name: 'Mbeya Admin', email: 'admin@mbeya.test', role: 'branch_admin', branch_id: mbeya.id });
+  });
+
+  after(() => stopServer(server));
+
+  it('limits the member registry to the caller\'s branch', async () => {
+    const national = await call(server, 'GET', '/api/members', { token: hq });
+    assert.equal(national.json.length, 2);
+
+    const scoped = await call(server, 'GET', '/api/members', { token: mbeyaRegistrar.token });
+    assert.deepEqual(scoped.json.map((m) => m.member_no), [mbeyaMember.member_no]);
+  });
+
+  it('ignores an attempt to widen the search to another branch', async () => {
+    const response = await call(server, 'GET', `/api/members?branch_id=${dodoma.id}`, { token: mbeyaRegistrar.token });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.json.map((m) => m.member_no), [mbeyaMember.member_no]);
+  });
+
+  it('hides a member from another branch behind a 404', async () => {
+    assert.equal((await call(server, 'GET', `/api/members/${mbeyaMember.id}`, { token: mbeyaRegistrar.token })).status, 200);
+    assert.equal((await call(server, 'GET', `/api/members/${dodomaMember.id}`, { token: mbeyaRegistrar.token })).status, 404);
+  });
+
+  it('refuses a payment against a member in another branch', async () => {
+    const response = await call(server, 'POST', `/api/members/${dodomaMember.id}/payments`, {
+      token: mbeyaRegistrar.token, body: { amount: 1000 }
+    });
+    assert.equal(response.status, 404);
+  });
+
+  it('refuses registration into another branch and defaults to the caller\'s own', async () => {
+    const rejected = await call(server, 'POST', '/api/members', {
+      token: mbeyaRegistrar.token,
+      body: { first_name: 'Wrong', last_name: 'Branch', phone: '+255730000003', branch_id: dodoma.id }
+    });
+    assert.equal(rejected.status, 403);
+
+    const created = await call(server, 'POST', '/api/members', {
+      token: mbeyaRegistrar.token, body: { first_name: 'Right', last_name: 'Branch', phone: '+255730000004' }
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.json.branch_id, mbeya.id);
+  });
+
+  it('scopes the dashboard totals and revenue', async () => {
+    const national = await call(server, 'GET', '/api/dashboard', { token: hq });
+    assert.equal(national.json.scope, 'national');
+    assert.equal(national.json.monthly_revenue, 100000);
+
+    const scoped = await call(server, 'GET', '/api/dashboard', { token: mbeyaRegistrar.token });
+    assert.equal(scoped.json.scope, 'branch');
+    assert.equal(scoped.json.monthly_revenue, 10000, 'revenue from another branch leaked');
+    assert.equal(scoped.json.active_branches, 1);
+    assert.ok(scoped.json.recent_members.every((m) => m.branch_name === 'Mbeya'));
+  });
+
+  it('scopes the branch list and the branch report', async () => {
+    assert.ok((await call(server, 'GET', '/api/branches', { token: hq })).json.length >= 2);
+    const branches = await call(server, 'GET', '/api/branches', { token: mbeyaRegistrar.token });
+    assert.deepEqual(branches.json.map((b) => b.code), ['MBY-01']);
+
+    const report = await call(server, 'GET', '/api/reports/branches', { token: mbeyaRegistrar.token });
+    assert.deepEqual(report.json.map((r) => r.code), ['MBY-01']);
+  });
+
+  it('keeps branch staff out of branch creation', async () => {
+    const response = await call(server, 'POST', '/api/branches', {
+      token: mbeyaAdmin.token, body: { code: 'NEW-01', name: 'Nope', region: 'Mbeya' }
+    });
+    assert.equal(response.status, 403);
+  });
+
+  it('refuses a branch-scoped account with no branch assigned', async () => {
+    // Strip the branch directly, the way a bad migration or manual edit would.
+    await withDatabase((c) => c.query('UPDATE users SET branch_id=NULL WHERE email=$1', ['registrar@mbeya.test']));
+    const response = await call(server, 'GET', '/api/members', { token: mbeyaRegistrar.token });
+    assert.equal(response.status, 403, 'an unassigned branch account must not fall back to national access');
+    await withDatabase((c) => c.query('UPDATE users SET branch_id=$1 WHERE email=$2', [mbeya.id, 'registrar@mbeya.test']));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+describe('staff management', () => {
+  let server, hq, branch, otherBranch, branchAdmin, registrar;
+
+  before(async () => {
+    await resetDatabase();
+    server = startServer();
+    await waitForHealth(server);
+    hq = (await login(server)).json.token;
+    branch = (await call(server, 'POST', '/api/branches', { token: hq, body: { code: 'ARU-01', name: 'Arusha', region: 'Arusha' } })).json;
+    otherBranch = (await call(server, 'POST', '/api/branches', { token: hq, body: { code: 'TAN-01', name: 'Tanga', region: 'Tanga' } })).json;
+    branchAdmin = await createStaff(server, hq, { name: 'Arusha Admin', email: 'admin@arusha.test', role: 'branch_admin', branch_id: branch.id });
+    registrar = await createStaff(server, hq, { name: 'Arusha Registrar', email: 'registrar@arusha.test', role: 'registrar', branch_id: branch.id });
+  });
+
+  after(() => stopServer(server));
+
+  it('lets a new staff account sign in and work', async () => {
+    const created = await call(server, 'POST', '/api/members', {
+      token: registrar.token, body: { first_name: 'Signed', last_name: 'In', phone: '+255740000001' }
+    });
+    assert.equal(created.status, 201);
+  });
+
+  it('requires a branch for a branch role and forbids one for a national role', async () => {
+    const missing = await call(server, 'POST', '/api/users', {
+      token: hq, body: { name: 'No Branch', email: 'nobranch@test.test', role: 'registrar', password: STAFF_PASSWORD }
+    });
+    assert.equal(missing.status, 400);
+
+    const national = await call(server, 'POST', '/api/users', {
+      token: hq, body: { name: 'HQ Two', email: 'hq2@test.test', role: 'hq_admin', branch_id: branch.id, password: STAFF_PASSWORD }
+    });
+    assert.equal(national.status, 201);
+    assert.equal(national.json.branch_id, null, 'a national role must not be pinned to a branch');
+  });
+
+  it('rejects weak passwords and duplicate emails', async () => {
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: hq, body: { name: 'Weak', email: 'weak@test.test', role: 'viewer', branch_id: branch.id, password: 'short' }
+    })).status, 400);
+
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: hq, body: { name: 'Clash', email: 'admin@arusha.test', role: 'viewer', branch_id: branch.id, password: STAFF_PASSWORD }
+    })).status, 409);
+  });
+
+  it('stops anyone handing out a role above their own', async () => {
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: branchAdmin.token, body: { name: 'Climb', email: 'climb@test.test', role: 'hq_admin', password: STAFF_PASSWORD }
+    })).status, 403);
+
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: branchAdmin.token, body: { name: 'Peer', email: 'peer@test.test', role: 'branch_admin', password: STAFF_PASSWORD }
+    })).status, 403);
+
+    const allowed = await call(server, 'POST', '/api/users', {
+      token: branchAdmin.token, body: { name: 'New Registrar', email: 'new@arusha.test', role: 'registrar', password: STAFF_PASSWORD }
+    });
+    assert.equal(allowed.status, 201);
+    assert.equal(allowed.json.branch_id, branch.id, 'a branch admin must create into their own branch');
+  });
+
+  it('keeps a branch admin away from staff in another branch', async () => {
+    const outsider = await createStaff(server, hq, { name: 'Tanga Registrar', email: 'registrar@tanga.test', role: 'registrar', branch_id: otherBranch.id });
+
+    const listed = await call(server, 'GET', '/api/users', { token: branchAdmin.token });
+    assert.ok(listed.json.every((u) => u.branch_id === branch.id), 'staff from another branch were listed');
+
+    assert.equal((await call(server, 'PATCH', `/api/users/${outsider.user.id}`, {
+      token: branchAdmin.token, body: { name: 'Hijacked' }
+    })).status, 404);
+
+    assert.equal((await call(server, 'POST', `/api/users/${outsider.user.id}/password`, {
+      token: branchAdmin.token, body: { password: 'another-long-password' }
+    })).status, 404);
+  });
+
+  it('lets you rename yourself but never suspend yourself', async () => {
+    const me = (await call(server, 'GET', '/api/me', { token: branchAdmin.token })).json;
+    assert.equal((await call(server, 'PATCH', `/api/users/${me.id}`, { token: branchAdmin.token, body: { name: 'Renamed' } })).status, 200);
+    assert.equal((await call(server, 'PATCH', `/api/users/${me.id}`, { token: branchAdmin.token, body: { status: 'suspended' } })).status, 403);
+  });
+
+  it('sends a self password change through the endpoint that asks for the current one', async () => {
+    const me = (await call(server, 'GET', '/api/me', { token: branchAdmin.token })).json;
+    assert.equal((await call(server, 'POST', `/api/users/${me.id}/password`, {
+      token: branchAdmin.token, body: { password: 'sneaky-long-password' }
+    })).status, 403);
+  });
+
+  it('stops anyone escalating their own role', async () => {
+    const me = (await call(server, 'GET', '/api/me', { token: branchAdmin.token })).json;
+    assert.equal((await call(server, 'PATCH', `/api/users/${me.id}`, { token: branchAdmin.token, body: { role: 'hq_admin' } })).status, 403);
+    assert.equal((await call(server, 'PATCH', `/api/users/${me.id}`, { token: branchAdmin.token, body: { role: 'super_admin' } })).status, 403);
+  });
+
+  it('keeps an HQ admin away from a super admin account entirely', async () => {
+    const superAdmin = (await call(server, 'GET', '/api/me', { token: hq })).json;
+    const hqAdmin = await createStaff(server, hq, { name: 'HQ Admin', email: 'hq@test.test', role: 'hq_admin' });
+
+    assert.equal((await call(server, 'PATCH', `/api/users/${superAdmin.id}`, { token: hqAdmin.token, body: { role: 'hq_admin' } })).status, 403);
+    assert.equal((await call(server, 'PATCH', `/api/users/${superAdmin.id}`, { token: hqAdmin.token, body: { status: 'suspended' } })).status, 403);
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: hqAdmin.token, body: { name: 'Rival', email: 'rival@test.test', role: 'super_admin', password: STAFF_PASSWORD }
+    })).status, 403);
+  });
+
+  it('refuses a handover that would leave no active super admin', async () => {
+    const superAdmin = (await call(server, 'GET', '/api/me', { token: hq })).json;
+    const lonely = await call(server, 'PATCH', `/api/users/${superAdmin.id}`, { token: hq, body: { role: 'hq_admin' } });
+    assert.equal(lonely.status, 409, 'the club would have been left with no super admin');
+
+    // With a successor in place the same handover is allowed, and the old account loses its reach.
+    const successor = await createStaff(server, hq, { name: 'Successor', email: 'successor@test.test', role: 'super_admin' });
+    assert.equal((await call(server, 'PATCH', `/api/users/${superAdmin.id}`, { token: hq, body: { role: 'hq_admin' } })).status, 200);
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: hq, body: { name: 'Too Late', email: 'toolate@test.test', role: 'super_admin', password: STAFF_PASSWORD }
+    })).status, 403, 'the stepped-down account kept super admin powers');
+
+    // Put the fixture back so later tests still have their original super admin session.
+    assert.equal((await call(server, 'PATCH', `/api/users/${superAdmin.id}`, { token: successor.token, body: { role: 'super_admin' } })).status, 200);
+  });
+
+  it('applies a suspension and a role change to the next request, not the next login', async () => {
+    const victim = await createStaff(server, hq, { name: 'Soon Gone', email: 'gone@arusha.test', role: 'registrar', branch_id: branch.id });
+    assert.equal((await call(server, 'GET', '/api/members', { token: victim.token })).status, 200);
+
+    await call(server, 'PATCH', `/api/users/${victim.user.id}`, { token: hq, body: { status: 'suspended' } });
+    assert.equal((await call(server, 'GET', '/api/members', { token: victim.token })).status, 401,
+      'a suspended account kept working on its existing token');
+    assert.equal((await call(server, 'POST', '/api/auth/login', { body: { email: 'gone@arusha.test', password: STAFF_PASSWORD } })).status, 401);
+
+    const demoted = await createStaff(server, hq, { name: 'Demote Me', email: 'demote@arusha.test', role: 'branch_admin', branch_id: branch.id });
+    assert.equal((await call(server, 'GET', '/api/users', { token: demoted.token })).status, 200);
+    await call(server, 'PATCH', `/api/users/${demoted.user.id}`, { token: hq, body: { role: 'registrar' } });
+    assert.equal((await call(server, 'GET', '/api/users', { token: demoted.token })).status, 403,
+      'a demoted account kept its old privileges on its existing token');
+  });
+
+  it('moves a member of staff to another branch', async () => {
+    const mover = await createStaff(server, hq, { name: 'Mover', email: 'mover@arusha.test', role: 'registrar', branch_id: branch.id });
+    await call(server, 'PATCH', `/api/users/${mover.user.id}`, { token: hq, body: { branch_id: otherBranch.id } });
+    const scoped = await call(server, 'GET', '/api/branches', { token: mover.token });
+    assert.deepEqual(scoped.json.map((b) => b.code), ['TAN-01']);
+  });
+
+  it('resets a password as an administrator', async () => {
+    const target = await createStaff(server, hq, { name: 'Forgot', email: 'forgot@arusha.test', role: 'viewer', branch_id: branch.id });
+    assert.equal((await call(server, 'POST', `/api/users/${target.user.id}/password`, { token: branchAdmin.token, body: { password: 'short' } })).status, 400);
+
+    assert.equal((await call(server, 'POST', `/api/users/${target.user.id}/password`, {
+      token: branchAdmin.token, body: { password: 'brand-new-long-password' }
+    })).status, 200);
+    await loginAs(server, 'forgot@arusha.test', 'brand-new-long-password');
+  });
+
+  it('changes your own password only with the current one', async () => {
+    const self = await createStaff(server, hq, { name: 'Self Serve', email: 'self@arusha.test', role: 'viewer', branch_id: branch.id });
+
+    assert.equal((await call(server, 'POST', '/api/me/password', {
+      token: self.token, body: { current_password: 'wrong-password', new_password: 'my-new-long-password' }
+    })).status, 401);
+
+    assert.equal((await call(server, 'POST', '/api/me/password', {
+      token: self.token, body: { current_password: STAFF_PASSWORD, new_password: 'my-new-long-password' }
+    })).status, 200);
+    await loginAs(server, 'self@arusha.test', 'my-new-long-password');
+  });
+
+  it('keeps a registrar and a viewer out of staff management', async () => {
+    assert.equal((await call(server, 'GET', '/api/users', { token: registrar.token })).status, 403);
+    assert.equal((await call(server, 'POST', '/api/users', {
+      token: registrar.token, body: { name: 'Nope', email: 'nope@test.test', role: 'viewer', password: STAFF_PASSWORD }
+    })).status, 403);
+
+    const viewer = await createStaff(server, hq, { name: 'Read Only', email: 'viewer@arusha.test', role: 'viewer', branch_id: branch.id });
+    assert.equal((await call(server, 'GET', '/api/members', { token: viewer.token })).status, 200);
+    assert.equal((await call(server, 'POST', '/api/members', {
+      token: viewer.token, body: { first_name: 'No', last_name: 'Write', phone: '+255740000900' }
+    })).status, 403);
   });
 });

@@ -35,6 +35,9 @@ jobs:
 
       - run: npm ci
 
+      # The browser suite checks that the UI hides what a role may not use.
+      - run: npx playwright install --with-deps chromium
+
       - run: npm test
         env:
           SIMBAOS_TEST_DATABASE_URL: postgres://simbaos:simbaos@localhost:5432/simbaos_test
