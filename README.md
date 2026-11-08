@@ -1,62 +1,82 @@
-# SimbaOS
+# simbaOs
 
-SimbaOS is a self-hostable operating system for Simba Sports Club membership, branches, payments and nationwide reporting.
+Simba Sports Club fan membership platform by KobepayTech.
 
-The first MVP includes:
+## Mobile web app
 
-- Secure staff login with role-aware API permissions
-- Nationwide branch registry
-- Member registration and searchable member database
-- Automatic Simba member numbers
-- Membership/payment ledger
-- HQ dashboard with live totals
-- Branch-level membership reporting
-- Audit log foundation
-- Health endpoint for application/database status
-- Responsive web UI for desktop, tablet and mobile
-- Docker Compose deployment with PostgreSQL so the club can host the system itself
+Private review: https://simba-fan-membership.sosteristephen.chatgpt.site
 
-## Run it locally or on a club server
+Mobile-first, installable PWA with bottom navigation, Swahili/English UI, home-screen icons, an offline reconnect screen, QR onboarding, printable membership cards and live card verification. Private membership data, payments and votes are never cached offline.
 
-1. Install Docker and Docker Compose.
-2. Copy `.env.example` to `.env` and change all passwords/secrets.
-3. Start the stack:
+Implemented workflows:
+- Phone OTP registration and same-phone account recovery (Twilio Verify adapter; credentials required).
+- All 31 Tanzanian regional groups; district branches, scoped branch leaders, announcements and events.
+- Permanent joining rank, renewable numbers 1–1,000,000, configurable tier prices, timed checkout reservations and waitlists.
+- Payment orders, signed idempotent settlement callbacks, automatic activation/renewal, expiry release and late-payment review. A payment-provider adapter must be connected to the documented contract.
+- One-month renewal reminders plus optional 7-day/1-day notices, SMS outbox and scheduled Worker source.
+- Benefit catalog, points-based passes, one-time redemption, event check-ins, renewal/referral/attendance points.
+- Candidate profiles, national/regional/district ballots, opening-time eligibility snapshot, one vote per verified active member, separate participation and choices, results after closing.
+- Administrator pricing, member/collection dashboards, staff assignments, audit records and connection status.
 
-```bash
-docker compose up -d --build
+See [connection requirements and security boundaries](docs/INTEGRATIONS.md). No live payment, OTP or SMS credentials are included. The current review is private and has no fabricated members, ballots, partner offers or approved fees.
+
+## Run locally
+
+Requires Node.js 22.13+ and pnpm matching `package.json`.
+
+```sh
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-4. Open `http://localhost:8080` (or the server IP on your LAN).
+Build and typecheck:
 
-The default development credentials are shown only for first-run convenience:
+```sh
+pnpm exec tsc --noEmit
+pnpm build
+```
 
-- Email: `admin@simbaos.local`
-- Password: `SimbaOS123!`
+For local database setup, build first and apply **each** pending migration once in numeric order (0000 through 0003):
 
-**Change these in `.env` before any real deployment.**
+```sh
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_clever_richard_fisk.sql
+```
 
-## Hosting model
+See [runtime instructions](docs/RUNTIME.md) for the Worker runtime and authentication details. The app uses Cloudflare D1, not Supabase. `.openai/hosting.json` retains logical bindings only; no existing private Site ID or credentials are exported.
 
-SimbaOS is not tied to a third-party SaaS database. The team owns the application and PostgreSQL database and can run them on:
+## Source layout
 
-- an office/on-premise server accessible on the club LAN,
-- a VPS,
-- a private cloud VM,
-- or behind a reverse proxy / Cloudflare Tunnel.
+- `app/fan-app.tsx`: fan interface and onboarding.
+- `app/api/`: membership, number availability, and voting endpoints.
+- `lib/membership.ts`: regions, number categories, reminder-date rules.
+- `lib/platform/`: membership lifecycle, sessions, provider adapters, validation and staff workflows.
+- `db/` and `drizzle/`: database schema and migrations.
+- `public/join-qr.svg`: QR code pointing to the private preview’s onboarding URL; regenerate for the final public domain.
+- `docs/CONTENT-SOURCES.md`: source audit and launch dependencies.
 
-The web app listens on port `8080` by default and can be placed behind the club's own domain and TLS proxy.
+## Before public launch
 
-## Core API
+1. Publish approved membership prices and term length in Admin → Membership pricing.
+2. Configure phone/SMS credentials and the chosen payment-provider adapter.
+3. Deploy the reminder scheduler with its secret and the final app origin.
+4. Configure administrator identities and branch/scanner roles.
+5. Run real-provider sandbox and end-to-end acceptance tests, then configure public fan access and the final domain.
 
-- `GET /api/health`
-- `POST /api/auth/login`
-- `GET /api/dashboard`
-- `GET|POST /api/branches`
-- `GET|POST /api/members`
-- `GET /api/members/:id`
-- `POST /api/members/:id/payments`
-- `GET /api/reports/branches`
+The app uses D1; no Supabase dependency is present. The QR used in the mobile interface is generated from the current origin.
 
-## Next production modules
+## Verification
 
-The database/API are structured so the next phase can add digital membership cards with QR verification, member photos, renewals, branch staff management, approvals, mobile-money/bank integrations, communications, supporter segmentation, match/event access, merchandise, and offline branch sync.
+```sh
+pnpm test
+pnpm exec tsc --noEmit
+pnpm build
+```
+
+Tests use SQLite transactions behind a small D1-compatible harness. They cover concurrent ownership rules, callback idempotency, late payments, joining order, referral rewards, benefits and voting. Real provider delivery, device installation and production checkout still require their respective acceptance tests.
+
+## Separate administration portal
+
+Open `/admin` for the club office: membership desk, audited manual receipts, payment methods, fees, editable club profile and policies, news, branches, events, rewards, ballots, staff access and reminder/audit logs. See [Administrator guide](docs/ADMIN.md). Shared data updates the mobile fan app. Automatic payment and SMS integrations still require production configuration.
+
+The separately hosted [club operations dashboard](tools/club-operations/README.md) runs with its own database and credentials.
