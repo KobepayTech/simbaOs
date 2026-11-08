@@ -78,3 +78,5 @@ Tests use SQLite transactions behind a small D1-compatible harness. They cover c
 ## Separate administration portal
 
 Open `/admin` for the club office: membership desk, audited manual receipts, payment methods, fees, editable club profile and policies, news, branches, events, rewards, ballots, staff access and reminder/audit logs. See [Administrator guide](docs/ADMIN.md). Shared data updates the mobile fan app. Automatic payment and SMS integrations still require production configuration.
+
+The separately hosted [club operations dashboard](tools/club-operations/README.md) runs with its own database and credentials.
